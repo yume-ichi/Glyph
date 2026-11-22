@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlyphWiki グリッド＆読みメモ</title>
+<style>
+  :root{--bg:#faf8f4;--card:#fff;--ink:#222;--sub:#777;--line:#ddd6c8;--acc:#b5532b;--acc2:#f3e3d8}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-serif;line-height:1.5}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card)}
+  h1{font-size:18px;margin:0 0 2px}
+  header p{margin:0;color:var(--sub);font-size:13px}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  input[type=text],select,textarea{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+  input.main{flex:1;min-width:220px}
+  button{font:inherit;padding:7px 12px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer}
+  button:hover{background:var(--acc2)}
+  button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+  button.pri:hover{filter:brightness(1.1)}
+  .conv{margin-top:8px;font-size:13px;color:var(--sub);word-break:break-all}
+  .conv a{color:var(--acc)}
+  .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .range{font-weight:600;font-variant-numeric:tabular-nums}
+  .grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .cell{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px;text-align:center;min-width:0;cursor:pointer}
+  .cell.hit{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc2)}
+  .cell.sel{background:var(--acc2)}
+  .glyph{aspect-ratio:1;display:flex;align-items:center;justify-content:center;background:#fcfbf8;border-radius:5px;overflow:hidden}
+  .glyph img{width:100%;height:100%;object-fit:contain}
+  .glyph span{font-size:clamp(18px,4vw,34px)}
+  .code{font-size:10px;color:var(--sub);margin-top:3px;font-variant-numeric:tabular-nums}
+  .cell input{width:100%;margin-top:3px;padding:3px 4px;font-size:12px;text-align:center}
+  .cell input.has{background:#fff7e8;border-color:var(--acc)}
+  .detail{display:flex;gap:14px;flex-wrap:wrap}
+  .detail .big{width:180px;height:180px;background:#fcfbf8;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center}
+  .detail .big img{width:100%;height:100%;object-fit:contain}
+  .detail .big span{font-size:110px}
+  .detail .info{flex:1;min-width:240px;font-size:14px}
+  .detail .info div{margin-bottom:6px;word-break:break-all}
+  .list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:13px;cursor:pointer;background:#fff}
+  .chip:hover{background:var(--acc2)}
+  textarea{width:100%;min-height:110px;font-family:ui-monospace,monospace;font-size:12px;margin-top:8px}
+  .hint{font-size:12px;color:var(--sub)}
+  @media(max-width:560px){.grid{gap:3px}.cell{padding:2px}.cell input{font-size:10px;padding:2px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>GlyphWiki グリッド＆読みメモ</h1>
+  <p>Unicode・文字・GlyphWikiのリンクから、8列×8行で字形を見て、漢字の読みを自分で付けられます</p>
+</header>
+<main>
+  <div class="panel">
+    <div class="row">
+      <input class="main" id="q" type="text" placeholder="例: 312D5 ／ U+312D5 ／ 𱋕 ／ https://glyphwiki.org/wiki/u312d5-jv" value="https://glyphwiki.org/wiki/u312d5-jv">
+      <select id="suf" title="字形の種類（GlyphWikiの接尾辞）">
+        <option value="">接尾辞なし</option>
+        <option value="-jv" selected>-jv（JV）</option>
+        <option value="-g">-g（GB）</option>
+        <option value="-h">-h（香港）</option>
+        <option value="-j">-j（日本）</option>
+        <option value="-k">-k（韓国）</option>
+        <option value="-t">-t（台湾）</option>
+        <option value="-v">-v（ベトナム）</option>
+        <option value="-u">-u（Unicode）</option>
+        <option value="-ue">-ue（拡張）</option>
+        <option value="-us">-us（US）</option>
+      </select>
+      <button class="pri" id="go">表示</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <span class="hint">範囲へジャンプ：</span>
+      <select id="jump">
+        <option value="4E00">CJK統合漢字 4E00</option>
+        <option value="3400">拡張A 3400</option>
+        <option value="20000">拡張B 20000</option>
+        <option value="2A700">拡張C 2A700</option>
+        <option value="2B740">拡張D 2B740</option>
+        <option value="2B820">拡張E 2B820</option>
+        <option value="2CEB0">拡張F 2CEB0</option>
+        <option value="30000" selected>拡張G 30000</option>
+        <option value="31350">拡張H 31350</option>
+        <option value="2EBF0">拡張I 2EBF0</option>
+        <option value="F900">互換漢字 F900</option>
+      </select>
+      <button id="jgo">移動</button>
+    </div>
+    <div class="conv" id="conv"></div>
+  </div>
+
+  <div class="panel" id="detail"></div>
+
+  <div class="bar">
+    <div class="row">
+      <button id="prev">◀ 前の64字</button>
+      <button id="next">次の64字 ▶</button>
+    </div>
+    <div class="range" id="range"></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <p class="hint">各マスの下の欄に読みを入力すると、このブラウザに自動保存されます。画像はGlyphWikiから直接読み込みます（無い字形は文字そのものを表示）。</p>
+
+  <div class="panel" style="margin-top:14px">
+    <div class="bar" style="margin:0">
+      <strong>付けた読みの一覧 <span id="cnt" class="hint"></span></strong>
+      <div class="row">
+        <button id="exp">書き出し</button>
+        <button id="imp">読み込み</button>
+        <button id="clr">全部消す</button>
+      </div>
+    </div>
+    <div class="list" id="list"></div>
+    <div id="io" style="display:none">
+      <textarea id="ta" placeholder='{"312d5":"むぎごはん"}'></textarea>
+      <div class="row" style="margin-top:6px">
+        <button id="apply" class="pri">この内容で読み込む</button>
+        <button id="copy">コピー</button>
+        <button id="dl">ファイルに保存</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const KEY="glyphwiki-readings-v1";
+  let readings={};
+  try{readings=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){readings={}}
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(readings))}catch(e){}};
+
+  let base=0x312C0, hit=0x312D5, sel=0x312D5, suffix="-jv";
+  const MAX=0x10FFFF;
+  const hex=cp=>cp.toString(16);
+  const HEX=cp=>cp.toString(16).toUpperCase().padStart(4,"0");
+  const name=(cp,s)=>"u"+hex(cp)+(s===undefined?suffix:s);
+  const svgUrl=(cp,s)=>"https://glyphwiki.org/glyph/"+name(cp,s)+".svg";
+  const wikiUrl=(cp,s)=>"https://glyphwiki.org/wiki/"+name(cp,s);
+  const isSurrogate=cp=>cp>=0xD800&&cp<=0xDFFF;
+  const ch=cp=>isSurrogate(cp)?"":String.fromCodePoint(cp);
+
+  function parse(s){
+    s=s.trim();
+    let m=s.match(/glyphwiki\.org\/(?:wiki|glyph)\/(u[0-9a-f]{4,6})(-[a-z0-9]+)?(?:\.svg)?/i);
+    if(m) return {cp:parseInt(m[1].slice(1),16),suf:(m[2]||"").toLowerCase(),fromUrl:true};
+    m=s.match(/^(?:u\+?|0x)?([0-9a-f]{4,6})$/i);
+    if(m) return {cp:parseInt(m[1],16)};
+    const first=[...s][0];
+    if(first) return {cp:first.codePointAt(0)};
+    return null;
+  }
+
+  function makeGlyph(cp,size){
+    const box=document.createElement("div");
+    box.className="glyph";
+    const img=new Image();
+    img.loading="lazy";
+    img.alt=ch(cp);
+    img.src=svgUrl(cp);
+    img.onerror=()=>{box.innerHTML="";const sp=document.createElement("span");sp.textContent=ch(cp);box.appendChild(sp)};
+    box.appendChild(img);
+    return box;
+  }
+
+  function renderConv(cp){
+    $("conv").innerHTML=
+      "変換結果：<a href='"+wikiUrl(cp)+"' target='_blank' rel='noopener'>"+wikiUrl(cp)+"</a>"+
+      " → <a href='"+svgUrl(cp)+"' target='_blank' rel='noopener'>"+svgUrl(cp)+"</a>";
+  }
+
+  function renderDetail(){
+    const d=$("detail");d.innerHTML="";
+    const wrap=document.createElement("div");wrap.className="detail";
+    const big=document.createElement("div");big.className="big";
+    const img=new Image();img.alt="";img.src=svgUrl(sel);
+    img.onerror=()=>{big.innerHTML="";const sp=document.createElement("span");sp.textContent=ch(sel);big.appendChild(sp)};
+    big.appendChild(img);
+    const info=document.createElement("div");info.className="info";
+    info.innerHTML=
+      "<div><b>文字：</b>"+(ch(sel)||"（なし）")+"　<b>Unicode：</b>U+"+HEX(sel)+"</div>"+
+      "<div><b>グリフ名：</b>"+name(sel)+"</div>"+
+      "<div><b>ページ：</b><a href='"+wikiUrl(sel)+"' target='_blank' rel='noopener'>"+wikiUrl(sel)+"</a></div>"+
+      "<div><b>SVG：</b><a href='"+svgUrl(sel)+"' target='_blank' rel='noopener'>"+svgUrl(sel)+"</a></div>";
+    const row=document.createElement("div");row.className="row";
+    const inp=document.createElement("input");
+    inp.type="text";inp.placeholder="読みを入力（例: むぎごはん）";inp.value=readings[hex(sel)]||"";inp.style.flex="1";
+    inp.oninput=()=>{setReading(sel,inp.value,true)};
+    row.append(inp);
+    info.append(row);
+    wrap.append(big,info);d.append(wrap);
+  }
+
+  function setReading(cp,val,fromDetail){
+    val=val.trim();
+    if(val) readings[hex(cp)]=val; else delete readings[hex(cp)];
+    save();
+    renderList();
+    const cell=document.querySelector('.cell[data-cp="'+cp+'"] input');
+    if(cell&&document.activeElement!==cell){cell.value=val;cell.classList.toggle("has",!!val)}
+    if(!fromDetail&&cp===sel){const di=document.querySelector("#detail input");if(di&&document.activeElement!==di)di.value=val}
+  }
+
+  function renderGrid(){
+    const g=$("grid");g.innerHTML="";
+    const end=Math.min(base+63,MAX);
+    $("range").textContent="U+"+HEX(base)+" 〜 U+"+HEX(end);
+    for(let i=0;i<64;i++){
+      const cp=base+i;
+      if(cp>MAX)break;
+      const c=document.createElement("div");
+      c.className="cell"+(cp===hit?" hit":"")+(cp===sel?" sel":"");
+      c.dataset.cp=cp;
+      if(isSurrogate(cp)){
+        c.innerHTML="<div class='glyph'><span>—</span></div><div class='code'>"+HEX(cp)+"</div>";
+        g.append(c);continue;
+      }
+      c.append(makeGlyph(cp));
+      const code=document.createElement("div");code.className="code";
+      code.textContent=HEX(cp);
+      c.append(code);
+      const inp=document.createElement("input");
+      inp.type="text";inp.placeholder="読み";
+      const r=readings[hex(cp)]||"";
+      inp.value=r;if(r)inp.className="has";
+      inp.oninput=()=>{setReading(cp,inp.value,false);inp.classList.toggle("has",!!inp.value.trim())};
+      inp.onclick=e=>e.stopPropagation();
+      inp.onfocus=()=>select(cp,true);
+      c.append(inp);
+      c.onclick=()=>select(cp,false);
+      g.append(c);
+    }
+  }
+
+  function select(cp,keepFocus){
+    sel=cp;
+    document.querySelectorAll(".cell.sel").forEach(e=>e.classList.remove("sel"));
+    const cell=document.querySelector('.cell[data-cp="'+cp+'"]');
+    if(cell)cell.classList.add("sel");
+    renderConv(cp);
+    renderDetail();
+  }
+
+  function renderList(){
+    const keys=Object.keys(readings).sort((a,b)=>parseInt(a,16)-parseInt(b,16));
+    $("cnt").textContent="（"+keys.length+"件）";
+    const l=$("list");l.innerHTML="";
+    if(!keys.length){l.innerHTML="<span class='hint'>まだありません</span>";return}
+    keys.forEach(k=>{
+      const cp=parseInt(k,16);
+      const c=document.createElement("span");c.className="chip";
+      c.textContent=ch(cp)+" "+readings[k];
+      c.title="U+"+HEX(cp);
+      c.onclick=()=>goto(cp,suffix);
+      l.append(c);
+    });
+  }
+
+  function goto(cp,suf){
+    if(cp>MAX||cp<0)return;
+    suffix=suf;$("suf").value=suf;
+    if(![...$("suf").options].some(o=>o.value===suf)){
+      const o=new Option(suf+"（指定）",suf);$("suf").add(o);$("suf").value=suf;
+    }
+    hit=cp;sel=cp;base=Math.floor(cp/64)*64;
+    renderGrid();renderConv(cp);renderDetail();
+  }
+
+  $("go").onclick=()=>{
+    const p=parse($("q").value);
+    if(!p){return}
+    goto(p.cp,p.fromUrl?p.suf:$("suf").value);
+  };
+  $("q").addEventListener("keydown",e=>{if(e.key==="Enter")$("go").click()});
+  $("suf").onchange=()=>{suffix=$("suf").value;renderGrid();renderConv(sel);renderDetail()};
+  $("jgo").onclick=()=>{base=parseInt($("jump").value,16);hit=-1;sel=base;renderGrid();renderConv(sel);renderDetail()};
+  $("prev").onclick=()=>{base=Math.max(0,base-64);renderGrid()};
+  $("next").onclick=()=>{if(base+64<=MAX){base+=64;renderGrid()}};
+
+  const io=$("io"),ta=$("ta");
+  $("exp").onclick=()=>{io.style.display="block";ta.value=JSON.stringify(readings,null,1)};
+  $("imp").onclick=()=>{io.style.display="block";ta.value="";ta.focus()};
+  $("apply").onclick=()=>{
+    try{
+      const o=JSON.parse(ta.value);
+      if(!o||typeof o!=="object")throw 0;
+      for(const k in o){if(/^[0-9a-f]{4,6}$/i.test(k)&&typeof o[k]==="string"&&o[k].trim())readings[k.toLowerCase()]=o[k].trim()}
+      save();renderList();renderGrid();renderDetail();
+    }catch(e){alert("JSONの形式が正しくありません")}
+  };
+  $("copy").onclick=()=>{ta.select();try{navigator.clipboard.writeText(ta.value)}catch(e){document.execCommand&&document.execCommand("copy")}};
+  $("dl").onclick=()=>{
+    const b=new Blob([JSON.stringify(readings,null,1)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="glyph-readings.json";a.click();
+  };
+  $("clr").onclick=()=>{
+    if(!confirm("付けた読みを全部消しますか？"))return;
+    readings={};save();renderList();renderGrid();renderDetail();
+  };
+
+  renderGrid();renderConv(sel);renderDetail();renderList();
+})();
+</script>
+</body>
+</html>
