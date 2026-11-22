@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GlyphWiki 外字・合字フォントエディター</title>
+<style>
+  :root{--bg:#faf8f4;--card:#fff;--ink:#222;--sub:#777;--line:#ddd6c8;--acc:#b5532b;--acc2:#f3e3d8;--bad:#c0392b;--ok:#2e7d32}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Hiragino Sans","Yu Gothic",system-ui,sans-serif;line-height:1.5}
+  header{padding:14px 18px;border-bottom:1px solid var(--line);background:var(--card)}
+  h1{font-size:18px;margin:0 0 2px}
+  header p{margin:0;color:var(--sub);font-size:13px}
+  main{max-width:1000px;margin:0 auto;padding:16px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+  .panel h2{font-size:15px;margin:0 0 8px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  input[type=text],input[type=number],select,textarea{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink)}
+  textarea{width:100%}
+  button,label.btn{font:inherit;padding:6px 12px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;display:inline-block}
+  button:hover,label.btn:hover{background:var(--acc2)}
+  button.pri{background:var(--acc);color:#fff;border-color:var(--acc)}
+  button.pri:hover{filter:brightness(1.1)}
+  button:disabled{opacity:.5;cursor:default}
+  .hint{font-size:12px;color:var(--sub)}
+  .log{font-size:12px;margin-top:8px;max-height:140px;overflow:auto;white-space:pre-wrap}
+  .log .e{color:var(--bad)} .log .o{color:var(--ok)}
+  .item{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;background:#fffdfa}
+  .pv{width:84px;height:84px;flex:none;background:#fcfbf8;border:1px solid var(--line);border-radius:6px}
+  .pv svg{width:100%;height:100%;display:block}
+  .meta{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:6px 12px}
+  .meta .nm{grid-column:1/-1;font-weight:600;font-size:13px;word-break:break-all}
+  .meta label{font-size:12px;color:var(--sub);display:flex;flex-direction:column;gap:2px}
+  .meta input{width:100%}
+  .meta input.bad{border-color:var(--bad);background:#fff3f1}
+  .msg{grid-column:1/-1;font-size:12px;color:var(--bad)}
+  .item .del{flex:none}
+  .stat{font-size:13px;margin-top:8px}
+  #sample{min-height:120px;font-size:48px;line-height:1.4;font-feature-settings:"liga" 1,"rlig" 1}
+  details{margin-top:8px}
+  summary{cursor:pointer;font-size:13px}
+  .ranges{font-size:12px;color:var(--sub)}
+</style>
+</head>
+<body>
+<header>
+  <h1>GlyphWiki 外字・合字フォントエディター</h1>
+  <p>GlyphWikiのSVGを取り込み、外字（私用領域）や合字に割り当てて、TrueTypeフォント(.ttf)として書き出します</p>
+</header>
+<main>
+
+<div class="panel">
+  <h2>① GlyphWikiから取り込む</h2>
+  <textarea id="links" rows="3" placeholder="1行に1つ：&#10;https://glyphwiki.org/wiki/u312d5-jv&#10;https://glyphwiki.org/glyph/u4e00-g.svg&#10;u9ce5-j（グリフ名だけでもOK）"></textarea>
+  <div class="row" style="margin-top:8px">
+    <label class="hint">自動で割り当てる外字領域：
+      <select id="plane">
+        <option value="E000">E000〜F8FF（BMP私用領域）</option>
+        <option value="F0000">F0000〜FFFFD（第15面）</option>
+        <option value="100000">100000〜10FFFD（第16面）</option>
+      </select>
+    </label>
+    <button class="pri" id="fetchBtn">取得して追加</button>
+    <label class="btn">SVGファイルを追加<input id="file" type="file" accept=".svg,image/svg+xml" multiple hidden></label>
+  </div>
+  <details>
+    <summary>SVGのソースを貼り付けて追加（取得に失敗するとき）</summary>
+    <div class="row" style="margin-top:6px"><input type="text" id="pname" placeholder="名前（任意）" style="width:200px"><button id="pasteBtn">追加</button></div>
+    <textarea id="paste" rows="4" placeholder="&lt;svg ...&gt;...&lt;/svg&gt;" style="margin-top:6px"></textarea>
+  </details>
+  <p class="hint" style="margin:8px 0 0">リンクは自動で <code>https://glyphwiki.org/glyph/グリフ名.svg</code> に変換して取得します。ブラウザの制限（CORS）で取得できないときは、そのSVGリンクを保存してファイル追加するか、ソースを貼り付けてください。SVGファイルはこの画面にドラッグ＆ドロップでも追加できます。</p>
+  <div class="log" id="log"></div>
+</div>
+
+<div class="panel">
+  <h2>② 外字・合字の割り当て <span class="hint" id="count"></span></h2>
+  <p class="hint" style="margin-top:0">外字コード：<span class="ranges">E000〜F8FF ／ F0000〜FFFFD ／ 100000〜10FFFD</span>（16進で入力。U+付きでも可）<br>
+  合字：入力列に文字を並べる（例 <code>麦米</code>）。外字を含めるなら <code>U+E000 U+E001</code> のように空白で区切って書けます。外字コードと合字は両方付けても、片方だけでも構いません。</p>
+  <div id="items"></div>
+</div>
+
+<div class="panel">
+  <h2>③ フォントを作成</h2>
+  <div class="row">
+    <label class="hint">フォント名 <input type="text" id="family" value="MyGlyphFont" style="width:180px"></label>
+    <label class="hint">ascent <input type="number" id="asc" value="880" style="width:80px"></label>
+    <label class="hint">descent <input type="number" id="desc" value="120" style="width:80px"></label>
+    <button class="pri" id="buildBtn">フォントを作成</button>
+    <button id="dlBtn" disabled>.ttfをダウンロード</button>
+  </div>
+  <p class="hint" style="margin:6px 0 0">1字は ascent+descent（既定1000）の正方形に収まるよう、GlyphWikiの200×200の枠を拡大して配置します。</p>
+  <div class="stat" id="stat"></div>
+  <div class="log" id="blog"></div>
+</div>
+
+<div class="panel">
+  <h2>④ 試し書き</h2>
+  <div class="row" style="margin-bottom:8px">
+    <button id="fillPua">外字を全部並べる</button>
+    <button id="fillLig">合字の入力列を並べる</button>
+    <label class="hint">サイズ <select id="fs"><option>32</option><option selected>48</option><option>72</option><option>96</option></select> px</label>
+  </div>
+  <textarea id="sample" spellcheck="false" placeholder="フォントを作成すると、ここで確認できます"></textarea>
+</div>
+
+<div class="panel">
+  <h2>プロジェクト</h2>
+  <div class="row">
+    <button id="pExp">書き出し(JSON)</button>
+    <button id="pImp">読み込み</button>
+    <button id="pClr">全部消す</button>
+  </div>
+  <p class="hint" style="margin:6px 0 0">作業内容はこのブラウザに自動保存されます。別の環境へ移すときは書き出して読み込んでください。</p>
+  <div id="pio" style="display:none;margin-top:8px">
+    <textarea id="pta" rows="5" style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
+    <div class="row" style="margin-top:6px">
+      <button class="pri" id="pApply">この内容で読み込む</button>
+      <button id="pCopy">コピー</button>
+      <button id="pDl">ファイルに保存</button>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+//==BUILD_START
+// ---------- TrueType フォント生成（外部ライブラリなし） ----------
+function buildFont(spec){
+  const asc=spec.ascent, desc=spec.descent;
+  const family=spec.family||"MyGlyphFont";
+  const W=function(){this.a=[]};
+  W.prototype.u8=function(v){this.a.push(v&255);return this};
+  W.prototype.u16=function(v){this.a.push((v>>8)&255,v&255);return this};
+  W.prototype.i16=function(v){return this.u16(v&0xFFFF)};
+  W.prototype.u32=function(v){this.a.push((v>>>24)&255,(v>>>16)&255,(v>>>8)&255,v&255);return this};
+  W.prototype.tag=function(s){for(let i=0;i<4;i++)this.a.push(s.charCodeAt(i)&255);return this};
+  W.prototype.bytes=function(arr){for(let i=0;i<arr.length;i++)this.a.push(arr[i]);return this};
+  W.prototype.pad4=function(){while(this.a.length%4)this.a.push(0);return this};
+  const log2f=n=>Math.floor(Math.log2(n));
+
+  // --- グリフ一覧 ---
+  const glyphs=[]; // {contours, advance}
+  glyphs.push({contours:[
+    [[50,0],[50,700],[550,700],[550,0]],
+    [[100,50],[500,50],[500,650],[100,650]]
+  ],advance:600});
+  spec.glyphs.forEach(g=>glyphs.push({contours:g.contours,advance:g.advance}));
+  const cmap=new Map();
+  spec.glyphs.forEach((g,i)=>{if(g.pua!=null)cmap.set(g.pua,i+1)});
+  const ligs=[];
+  spec.glyphs.forEach((g,i)=>{
+    if(g.lig&&g.lig.length>=2){
+      g.lig.forEach(cp=>{
+        if(!cmap.has(cp)){cmap.set(cp,glyphs.length);glyphs.push({contours:[],advance:0,placeholder:true})}
+      });
+      ligs.push({out:i+1,comps:g.lig.map(cp=>cmap.get(cp))});
+    }
+  });
+  const numGlyphs=glyphs.length;
+
+  // --- glyf / loca / hmtx ---
+  const glyfW=new W(), loca=[0], metrics=[];
+  let maxPts=0,maxCont=0,gxMin=1e9,gyMin=1e9,gxMax=-1e9,gyMax=-1e9;
+  glyphs.forEach(g=>{
+    let cs=g.contours.filter(c=>c.length>=3);
+    let area=0;
+    cs.forEach(c=>{for(let i=0;i<c.length;i++){const p=c[i],q=c[(i+1)%c.length];area+=p[0]*q[1]-q[0]*p[1]}});
+    if(area>0)cs=cs.map(c=>c.slice().reverse());
+    if(!cs.length){metrics.push([g.advance,0]);loca.push(glyfW.a.length);return}
+    let xMin=1e9,yMin=1e9,xMax=-1e9,yMax=-1e9,n=0;
+    cs.forEach(c=>c.forEach(p=>{n++;xMin=Math.min(xMin,p[0]);xMax=Math.max(xMax,p[0]);yMin=Math.min(yMin,p[1]);yMax=Math.max(yMax,p[1])}));
+    maxPts=Math.max(maxPts,n);maxCont=Math.max(maxCont,cs.length);
+    gxMin=Math.min(gxMin,xMin);gyMin=Math.min(gyMin,yMin);gxMax=Math.max(gxMax,xMax);gyMax=Math.max(gyMax,yMax);
+    glyfW.i16(cs.length).i16(xMin).i16(yMin).i16(xMax).i16(yMax);
+    let end=-1;cs.forEach(c=>{end+=c.length;glyfW.u16(end)});
+    glyfW.u16(0);
+    for(let i=0;i<n;i++)glyfW.u8(1);
+    let px=0;cs.forEach(c=>c.forEach(p=>{glyfW.i16(p[0]-px);px=p[0]}));
+    let py=0;cs.forEach(c=>c.forEach(p=>{glyfW.i16(p[1]-py);py=p[1]}));
+    glyfW.pad4();
+    metrics.push([g.advance,xMin,xMax]);
+    loca.push(glyfW.a.length);
+  });
+  if(gxMin>1e8){gxMin=gyMin=0;gxMax=gyMax=0}
+  const glyfT=glyfW.pad4().a;
+  const locaW=new W();loca.forEach(v=>locaW.u32(v));
+  const hmtxW=new W();metrics.forEach(m=>hmtxW.u16(m[0]).i16(m.length>1?m[1]:0));
+
+  // --- cmap ---
+  const entries=[...cmap.entries()].filter(e=>!(e[0]>=0xD800&&e[0]<=0xDFFF)).sort((a,b)=>a[0]-b[0]);
+  const bmp=entries.filter(e=>e[0]<=0xFFFE);
+  const segs=[];
+  bmp.forEach(([cp,gid])=>{
+    const s=segs[segs.length-1];
+    if(s&&cp===s.end+1&&gid===s.gid+(cp-s.start)){s.end=cp}
+    else segs.push({start:cp,end:cp,gid});
+  });
+  segs.push({start:0xFFFF,end:0xFFFF,gid:0,last:true});
+  const sc=segs.length, sr=2*Math.pow(2,log2f(sc));
+  const f4=new W();
+  f4.u16(4).u16(16+8*sc).u16(0).u16(sc*2).u16(sr).u16(log2f(sc)).u16(sc*2-sr);
+  segs.forEach(s=>f4.u16(s.end));
+  f4.u16(0);
+  segs.forEach(s=>f4.u16(s.start));
+  segs.forEach(s=>f4.u16(s.last?1:((s.gid-s.start)&0xFFFF)));
+  segs.forEach(()=>f4.u16(0));
+  const groups=[];
+  entries.forEach(([cp,gid])=>{
+    const s=groups[groups.length-1];
+    if(s&&cp===s.end+1&&gid===s.gid+(cp-s.start)){s.end=cp}
+    else groups.push({start:cp,end:cp,gid});
+  });
+  const f12=new W();
+  f12.u16(12).u16(0).u32(16+12*groups.length).u32(0).u32(groups.length);
+  groups.forEach(g=>f12.u32(g.start).u32(g.end).u32(g.gid));
+  const cmapW=new W();
+  const o4=4+4*8, o12=o4+f4.a.length;
+  cmapW.u16(0).u16(4);
+  cmapW.u16(0).u16(3).u32(o4).u16(0).u16(4).u32(o12).u16(3).u16(1).u32(o4).u16(3).u16(10).u32(o12);
+  cmapW.bytes(f4.a).bytes(f12.a);
+
+  // --- GSUB（合字） ---
+  let gsub=null;
+  if(ligs.length){
+    const by=new Map();
+    ligs.forEach(l=>{const k=l.comps[0];if(!by.has(k))by.set(k,[]);by.get(k).push(l)});
+    const firsts=[...by.keys()].sort((a,b)=>a-b);
+    const sub=new W();
+    const nSet=firsts.length;
+    const covOff=6+2*nSet;
+    const covLen=4+2*nSet;
+    let off=covOff+covLen;
+    const setBlobs=[];
+    firsts.forEach(k=>{
+      const list=by.get(k).slice().sort((a,b)=>b.comps.length-a.comps.length);
+      const sw=new W();
+      sw.u16(list.length);
+      let lo=2+2*list.length;
+      const ligBlobs=[];
+      list.forEach(l=>{
+        const lw=new W();lw.u16(l.out).u16(l.comps.length);
+        for(let i=1;i<l.comps.length;i++)lw.u16(l.comps[i]);
+        sw.u16(lo);lo+=lw.a.length;ligBlobs.push(lw.a);
+      });
+      ligBlobs.forEach(b=>sw.bytes(b));
+      setBlobs.push(sw.a);
+    });
+    sub.u16(1).u16(covOff).u16(nSet);
+    setBlobs.forEach(b=>{sub.u16(off);off+=b.length});
+    sub.u16(1).u16(nSet);firsts.forEach(g=>sub.u16(g));
+    setBlobs.forEach(b=>sub.bytes(b));
+    const g=new W();
+    g.u16(1).u16(0).u16(10).u16(50).u16(70);
+    // ScriptList
+    g.u16(4);
+    ["DFLT","hani","kana","latn"].forEach(t=>g.tag(t).u16(26));
+    g.u16(4).u16(0);              // Script: defaultLangSys=4, langSysCount=0
+    g.u16(0).u16(0xFFFF).u16(2).u16(0).u16(1); // LangSys
+    // FeatureList
+    g.u16(2);g.tag("liga").u16(14);g.tag("rlig").u16(14);
+    g.u16(0).u16(1).u16(0);
+    // LookupList
+    g.u16(1).u16(4);
+    g.u16(4).u16(0).u16(1).u16(8);
+    g.bytes(sub.a);
+    gsub=g.a;
+  }
+
+  // --- head / hhea / maxp / OS/2 / name / post ---
+  const advMax=Math.max.apply(null,metrics.map(m=>m[0]));
+  const lsbs=metrics.filter(m=>m.length>2);
+  const minLsb=lsbs.length?Math.min.apply(null,lsbs.map(m=>m[1])):0;
+  const minRsb=lsbs.length?Math.min.apply(null,lsbs.map(m=>m[0]-m[2])):0;
+  const xExt=lsbs.length?Math.max.apply(null,lsbs.map(m=>m[2])):0;
+  const head=new W();
+  const created=Math.floor(Date.now()/1000)+2082844800;
+  head.u32(0x00010000).u32(0x00010000).u32(0).u32(0x5F0F3CF5).u16(1).u16(1000)
+      .u32(0).u32(created).u32(0).u32(created)
+      .i16(gxMin).i16(gyMin).i16(gxMax).i16(gyMax).u16(0).u16(8).i16(2).i16(1).i16(0);
+  const hhea=new W();
+  hhea.u32(0x00010000).i16(asc).i16(-desc).i16(0).u16(advMax).i16(minLsb).i16(minRsb).i16(xExt)
+      .i16(1).i16(0).i16(0).i16(0).i16(0).i16(0).i16(0).i16(0).u16(numGlyphs);
+  const maxp=new W();
+  maxp.u32(0x00010000).u16(numGlyphs).u16(maxPts).u16(maxCont).u16(0).u16(0).u16(2).u16(0).u16(0).u16(0).u16(0).u16(0).u16(0).u16(0).u16(0);
+  const cps=entries.map(e=>e[0]);
+  const anyBmpPua=cps.some(c=>c>=0xE000&&c<=0xF8FF);
+  const anyAstral=cps.some(c=>c>0xFFFF);
+  const anyPlane1516=cps.some(c=>c>=0xF0000);
+  const os2=new W();
+  const nz=metrics.filter(m=>m[0]>0);
+  const avg=nz.length?Math.round(nz.reduce((s,m)=>s+m[0],0)/nz.length):500;
+  const maxCtx=Math.max(1,...ligs.map(l=>l.comps.length));
+  os2.u16(4).i16(avg).u16(400).u16(5).u16(0)
+     .i16(650).i16(600).i16(0).i16(75).i16(650).i16(600).i16(0).i16(350).i16(50).i16(300).i16(0);
+  for(let i=0;i<10;i++)os2.u8(0);
+  os2.u32(0).u32(((anyBmpPua?1<<28:0)|(anyAstral?1<<25:0))>>>0).u32(anyPlane1516?(1<<26)>>>0:0).u32(0);
+  os2.tag("NONE").u16(0x40)
+     .u16(cps.length?Math.min(cps[0],0xFFFF):0).u16(cps.length?Math.min(cps[cps.length-1],0xFFFF):0)
+     .i16(asc).i16(-desc).i16(0).u16(asc).u16(desc).u32(0).u32(0)
+     .i16(0).i16(0).u16(0).u16(32).u16(maxCtx);
+  const ps=family.replace(/[^A-Za-z0-9]/g,"")||"MyGlyphFont";
+  const names=[[1,family],[2,"Regular"],[3,ps+"-"+created],[4,family],[5,"Version 1.000"],[6,ps+"-Regular"]];
+  const nameW=new W(), strW=new W();
+  nameW.u16(0).u16(names.length).u16(6+12*names.length);
+  names.forEach(([id,s])=>{
+    const start=strW.a.length;
+    for(let i=0;i<s.length;i++)strW.u16(s.charCodeAt(i));
+    nameW.u16(3).u16(1).u16(0x409).u16(id).u16(strW.a.length-start).u16(start);
+  });
+  nameW.bytes(strW.a);
+  const post=new W();
+  post.u32(0x00030000).u32(0).i16(-100).i16(50).u32(0).u32(0).u32(0).u32(0).u32(0);
+
+  // --- 組み立て ---
+  const tables=[["OS/2",os2.a],["cmap",cmapW.a],["glyf",glyfT],["head",head.a],["hhea",hhea.a],["hmtx",hmtxW.a],["loca",locaW.a],["maxp",maxp.a],["name",nameW.a],["post",post.a]];
+  if(gsub)tables.unshift(["GSUB",gsub]);
+  tables.sort((a,b)=>a[0]<b[0]?-1:1);
+  const nt=tables.length;
+  const sr2=16*Math.pow(2,log2f(nt));
+  const out=new W();
+  out.u32(0x00010000).u16(nt).u16(sr2).u16(log2f(nt)).u16(nt*16-sr2);
+  let pos=12+16*nt;
+  const sum=arr=>{let s=0;for(let i=0;i<arr.length;i+=4){s=(s+(((arr[i]||0)<<24)|((arr[i+1]||0)<<16)|((arr[i+2]||0)<<8)|(arr[i+3]||0))>>>0)>>>0}return s};
+  let headOff=0;
+  tables.forEach(([t,d])=>{
+    if(t==="head")headOff=pos;
+    out.tag(t).u32(sum(d)).u32(pos).u32(d.length);
+    pos+=(d.length+3)&~3;
+  });
+  tables.forEach(([t,d])=>{out.bytes(d);out.pad4()});
+  const all=Uint8Array.from(out.a);
+  const adj=(0xB1B0AFBA-sum(all))>>>0;
+  const dv=new DataView(all.buffer);
+  dv.setUint32(headOff+8,adj);
+  return {data:all,numGlyphs,ligatures:ligs.length,mapped:cmap.size,placeholders:glyphs.filter(g=>g.placeholder).length};
+}
+//==BUILD_END
+
+// ---------- SVG → 輪郭 ----------
+function svgToUnitContours(text){
+  const doc=new DOMParser().parseFromString(text,"image/svg+xml");
+  const svg=doc.documentElement;
+  if(!svg||svg.nodeName.toLowerCase()!=="svg"||doc.querySelector("parsererror"))throw new Error("SVGとして読み込めません");
+  let vb=(svg.getAttribute("viewBox")||"").trim().split(/[\s,]+/).map(Number);
+  if(vb.length!==4||vb.some(isNaN)||!vb[2]||!vb[3]){
+    vb=[0,0,parseFloat(svg.getAttribute("width"))||200,parseFloat(svg.getAttribute("height"))||200];
+  }
+  const out=[];
+  const mul=(m,n)=>[m[0]*n[0]+m[2]*n[1],m[1]*n[0]+m[3]*n[1],m[0]*n[2]+m[2]*n[3],m[1]*n[2]+m[3]*n[3],m[0]*n[4]+m[2]*n[5]+m[4],m[1]*n[4]+m[3]*n[5]+m[5]];
+  const parseTransform=s=>{
+    let m=[1,0,0,1,0,0];
+    const re=/(\w+)\s*\(([^)]*)\)/g;let r;
+    while((r=re.exec(s||""))){
+      const a=r[2].split(/[\s,]+/).filter(Boolean).map(Number);
+      let t=null;
+      switch(r[1]){
+        case"matrix":t=a.slice(0,6);break;
+        case"translate":t=[1,0,0,1,a[0]||0,a[1]||0];break;
+        case"scale":t=[a[0],0,0,a.length>1?a[1]:a[0],0,0];break;
+        case"rotate":{const c=Math.cos((a[0]||0)*Math.PI/180),s2=Math.sin((a[0]||0)*Math.PI/180);
+          t=[c,s2,-s2,c,0,0];
+          if(a.length>2)t=mul(mul([1,0,0,1,a[1],a[2]],t),[1,0,0,1,-a[1],-a[2]]);break}
+        case"skewX":t=[1,0,Math.tan((a[0]||0)*Math.PI/180),1,0,0];break;
+        case"skewY":t=[1,Math.tan((a[0]||0)*Math.PI/180),0,1,0,0];break;
+      }
+      if(t)m=mul(m,t);
+    }
+    return m;
+  };
+  const fillNone=e=>{
+    for(let n=e;n&&n.nodeType===1;n=n.parentNode){
+      let f=n.getAttribute&&n.getAttribute("fill");
+      const st=n.getAttribute&&n.getAttribute("style");
+      if(st){const mm=st.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/);if(mm)f=mm[1].trim()}
+      if(f)return f==="none"||f==="transparent";
+    }
+    return false;
+  };
+  const arc=(x1,y1,rx,ry,phi,fa,fs,x2,y2,add)=>{
+    if(!rx||!ry){add(x2,y2);return}
+    rx=Math.abs(rx);ry=Math.abs(ry);
+    const p=phi*Math.PI/180,cp=Math.cos(p),sp=Math.sin(p);
+    const dx=(x1-x2)/2,dy=(y1-y2)/2;
+    const x1p=cp*dx+sp*dy,y1p=-sp*dx+cp*dy;
+    const lam=x1p*x1p/(rx*rx)+y1p*y1p/(ry*ry);
+    if(lam>1){const s=Math.sqrt(lam);rx*=s;ry*=s}
+    const num=rx*rx*ry*ry-rx*rx*y1p*y1p-ry*ry*x1p*x1p,den=rx*rx*y1p*y1p+ry*ry*x1p*x1p;
+    let co=Math.sqrt(Math.max(0,num/den));if(fa===fs)co=-co;
+    const cxp=co*rx*y1p/ry,cyp=-co*ry*x1p/rx;
+    const cx=cp*cxp-sp*cyp+(x1+x2)/2,cy=sp*cxp+cp*cyp+(y1+y2)/2;
+    const ang=(ux,uy,vx,vy)=>Math.atan2(ux*vy-uy*vx,ux*vx+uy*vy);
+    const th1=ang(1,0,(x1p-cxp)/rx,(y1p-cyp)/ry);
+    let dth=ang((x1p-cxp)/rx,(y1p-cyp)/ry,(-x1p-cxp)/rx,(-y1p-cyp)/ry);
+    if(!fs&&dth>0)dth-=2*Math.PI;else if(fs&&dth<0)dth+=2*Math.PI;
+    const n=Math.max(8,Math.ceil(Math.abs(dth)/(Math.PI/16)));
+    for(let k=1;k<=n;k++){const t=th1+dth*k/n,px=rx*Math.cos(t),py=ry*Math.sin(t);add(cp*px-sp*py+cx,sp*px+cp*py+cy)}
+  };
+  const pushPoly=(pts,M)=>{
+    if(pts.length<3)return;
+    out.push(pts.map(([x,y])=>[(M[0]*x+M[2]*y+M[4]-vb[0])/vb[2],(M[1]*x+M[3]*y+M[5]-vb[1])/vb[3]]));
+  };
+  const parsePath=(d,M)=>{
+    const toks=d.match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+    let i=0,cmd="",x=0,y=0,sx=0,sy=0,lcx=0,lcy=0,prev="",cur=null;
+    const num=()=>parseFloat(toks[i++]);
+    const flush=()=>{if(cur&&cur.length>=3)pushPoly(cur,M);cur=null};
+    const ensure=()=>{if(!cur)cur=[[x,y]]};
+    const add=(px,py)=>{cur.push([px,py])};
+    while(i<toks.length){
+      if(/[a-zA-Z]/.test(toks[i]))cmd=toks[i++];
+      else if(!cmd)break;
+      const rel=cmd===cmd.toLowerCase(),C=cmd.toUpperCase();
+      if(C==="Z"){
+        flush();x=sx;y=sy;prev="Z";continue;
+      }
+      if(C==="M"){
+        flush();
+        let nx=num(),ny=num();if(rel){nx+=x;ny+=y}
+        x=nx;y=ny;sx=x;sy=y;cur=[[x,y]];
+        cmd=rel?"l":"L";prev="M";continue;
+      }
+      ensure();
+      if(C==="L"){let nx=num(),ny=num();if(rel){nx+=x;ny+=y}x=nx;y=ny;add(x,y)}
+      else if(C==="H"){let nx=num();if(rel)nx+=x;x=nx;add(x,y)}
+      else if(C==="V"){let ny=num();if(rel)ny+=y;y=ny;add(x,y)}
+      else if(C==="C"||C==="S"){
+        let x1,y1;
+        if(C==="C"){x1=num();y1=num();if(rel){x1+=x;y1+=y}}
+        else{if(prev==="C"||prev==="S"){x1=2*x-lcx;y1=2*y-lcy}else{x1=x;y1=y}}
+        let x2=num(),y2=num(),ex=num(),ey=num();
+        if(rel){x2+=x;y2+=y;ex+=x;ey+=y}
+        for(let k=1;k<=16;k++){const t=k/16,u=1-t;
+          add(u*u*u*x+3*u*u*t*x1+3*u*t*t*x2+t*t*t*ex,u*u*u*y+3*u*u*t*y1+3*u*t*t*y2+t*t*t*ey)}
+        lcx=x2;lcy=y2;x=ex;y=ey;
+      }else if(C==="Q"||C==="T"){
+        let x1,y1;
+        if(C==="Q"){x1=num();y1=num();if(rel){x1+=x;y1+=y}}
+        else{if(prev==="Q"||prev==="T"){x1=2*x-lcx;y1=2*y-lcy}else{x1=x;y1=y}}
+        let ex=num(),ey=num();if(rel){ex+=x;ey+=y}
+        for(let k=1;k<=12;k++){const t=k/12,u=1-t;add(u*u*x+2*u*t*x1+t*t*ex,u*u*y+2*u*t*y1+t*t*ey)}
+        lcx=x1;lcy=y1;x=ex;y=ey;
+      }else if(C==="A"){
+        const rx=num(),ry=num(),phi=num(),fa=num(),fs=num();let ex=num(),ey=num();
+        if(rel){ex+=x;ey+=y}
+        arc(x,y,rx,ry,phi,fa,fs,ex,ey,add);x=ex;y=ey;
+      }else{i++;continue}
+      prev=C;
+    }
+    flush();
+  };
+  const walk=(e,M)=>{
+    if(e.nodeType!==1)return;
+    const tag=e.nodeName.toLowerCase();
+    if(tag==="defs"||tag==="clippath"||tag==="mask"||tag==="style"||tag==="title"||tag==="desc"||tag==="metadata")return;
+    const m=mul(M,parseTransform(e.getAttribute("transform")));
+    const f=k=>parseFloat(e.getAttribute(k))||0;
+    if(!fillNone(e)){
+      if(tag==="path")parsePath(e.getAttribute("d")||"",m);
+      else if(tag==="polygon"||tag==="polyline"){
+        const n=(e.getAttribute("points")||"").match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+        const pts=[];for(let i=0;i+1<n.length;i+=2)pts.push([+n[i],+n[i+1]]);
+        pushPoly(pts,m);
+      }else if(tag==="rect"){
+        const x=f("x"),y=f("y"),w=f("width"),h=f("height");
+        pushPoly([[x,y],[x+w,y],[x+w,y+h],[x,y+h]],m);
+      }else if(tag==="circle"||tag==="ellipse"){
+        const cx=f("cx"),cy=f("cy"),rx=tag==="circle"?f("r"):f("rx"),ry=tag==="circle"?f("r"):f("ry");
+        const pts=[];for(let k=0;k<64;k++){const t=k/64*2*Math.PI;pts.push([cx+rx*Math.cos(t),cy+ry*Math.sin(t)])}
+        pushPoly(pts,m);
+      }
+    }
+    for(let c=e.firstChild;c;c=c.nextSibling)walk(c,m);
+  };
+  walk(svg,[1,0,0,1,0,0]);
+  if(!out.length)throw new Error("塗りつぶし図形が見つかりません");
+  return out;
+}
+
+// ---------- アプリ ----------
+(function(){
+  const $=id=>document.getElementById(id);
+  const KEY="glyphfont-project-v1";
+  let items=[],nextId=1,lastBuild=null;
+
+  const rangeOf=cp=>(cp>=0xE000&&cp<=0xF8FF)||(cp>=0xF0000&&cp<=0xFFFFD)||(cp>=0x100000&&cp<=0x10FFFD);
+  const HEX=cp=>cp.toString(16).toUpperCase();
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const logTo=(el,msg,cls)=>{const d=document.createElement("div");if(cls)d.className=cls;d.textContent=msg;el.append(d);el.scrollTop=el.scrollHeight};
+  const log=(m,c)=>logTo($("log"),m,c), blog=(m,c)=>logTo($("blog"),m,c);
+
+  function save(){
+    try{localStorage.setItem(KEY,JSON.stringify({items,nextId,family:$("family").value,asc:$("asc").value,desc:$("desc").value}))}catch(e){}
+  }
+  function load(j){
+    items=(j.items||[]).map(o=>({id:o.id,name:o.name||"",svg:o.svg,pua:o.pua||"",lig:o.lig||"",adv:o.adv||0}));
+    nextId=Math.max(j.nextId||1,...items.map(i=>i.id+1),1);
+    if(j.family)$("family").value=j.family;
+    if(j.asc)$("asc").value=j.asc;
+    if(j.desc)$("desc").value=j.desc;
+  }
+
+  // 数値化
+  function parseCp(s){
+    s=(s||"").trim().replace(/^(u\+|0x)/i,"");
+    if(!s)return null;
+    if(!/^[0-9a-f]{1,6}$/i.test(s))return NaN;
+    return parseInt(s,16);
+  }
+  function parseSeq(s){
+    const out=[];
+    (s||"").trim().split(/\s+/).filter(Boolean).forEach(tok=>{
+      if(/^(u\+|0x)[0-9a-f]{1,6}$/i.test(tok))out.push(parseInt(tok.replace(/^(u\+|0x)/i,""),16));
+      else for(const ch of tok)out.push(ch.codePointAt(0));
+    });
+    return out;
+  }
+
+  function nextFreePua(){
+    const st=parseInt($("plane").value,16);
+    const end=st===0xE000?0xF8FF:(st===0xF0000?0xFFFFD:0x10FFFD);
+    const used=new Set(items.map(i=>parseCp(i.pua)).filter(v=>v!=null&&!isNaN(v)));
+    for(let c=st;c<=end;c++)if(!used.has(c))return c;
+    return null;
+  }
+
+  function previewSvg(svgText){
+    try{
+      const cs=svgToUnitContours(svgText);
+      const d=cs.map(c=>"M"+c.map(p=>p[0].toFixed(4)+" "+p[1].toFixed(4)).join("L")+"Z").join("");
+      return '<svg viewBox="0 0 1 1"><rect width="1" height="1" fill="none" stroke="#e3dccf" stroke-width="0.004"/><path d="'+d+'" fill="#222"/></svg>';
+    }catch(e){return '<div style="padding:6px;font-size:11px;color:#c0392b">'+esc(e.message)+'</div>'}
+  }
+
+  function addItem(name,svg){
+    svgToUnitContours(svg); // 検証
+    const cp=nextFreePua();
+    items.push({id:nextId++,name,svg,pua:cp==null?"":HEX(cp),lig:"",adv:0});
+    render();save();
+  }
+
+  function validateItem(it){
+    const errs=[];
+    const cp=parseCp(it.pua);
+    if(isNaN(cp))errs.push("外字コードは16進で入力してください");
+    else if(cp!=null&&!rangeOf(cp))errs.push("外字領域（E000–F8FF / F0000–FFFFD / 100000–10FFFD）の外です");
+    else if(cp!=null&&items.some(o=>o!==it&&parseCp(o.pua)===cp))errs.push("他のグリフと外字コードが重複しています");
+    const seq=parseSeq(it.lig);
+    if(it.lig.trim()&&seq.length<2)errs.push("合字は2文字以上で入力してください");
+    if(seq.length>=2&&items.some(o=>o!==it&&o.lig.trim()&&parseSeq(o.lig).join()===seq.join()))errs.push("同じ合字が他のグリフにもあります");
+    if(cp==null&&seq.length<2&&!errs.length)errs.push("外字コードか合字のどちらかを指定してください");
+    return errs;
+  }
+
+  function render(){
+    const box=$("items");box.innerHTML="";
+    $("count").textContent="（"+items.length+"件）";
+    if(!items.length){box.innerHTML='<div class="hint">まだありません。①から取り込んでください。</div>';return}
+    items.forEach(it=>{
+      const row=document.createElement("div");row.className="item";
+      row.innerHTML=
+        '<div class="pv">'+previewSvg(it.svg)+'</div>'+
+        '<div class="meta"><div class="nm">'+esc(it.name)+'</div>'+
+        '<label>外字コード（U+）<input type="text" class="pua" value="'+esc(it.pua)+'" placeholder="例 E000"></label>'+
+        '<label>合字の入力列<input type="text" class="lig" value="'+esc(it.lig)+'" placeholder="例 麦米 / U+E000 U+E001"></label>'+
+        '<label>送り幅（0=標準）<input type="number" class="adv" value="'+(it.adv||0)+'" min="0" max="4000"></label>'+
+        '<div class="msg"></div></div>'+
+        '<button class="del">削除</button>';
+      const puaI=row.querySelector(".pua"),ligI=row.querySelector(".lig"),advI=row.querySelector(".adv"),msg=row.querySelector(".msg");
+      const upd=()=>{
+        it.pua=puaI.value.trim();it.lig=ligI.value;it.adv=Math.max(0,parseInt(advI.value)||0);
+        save();
+        // 全行を再検証（重複チェックのため）
+        document.querySelectorAll("#items .item").forEach((r,i)=>r._check&&r._check());
+      };
+      row._check=()=>{
+        const errs=validateItem(it);
+        msg.textContent=errs.join(" ／ ");
+        puaI.classList.toggle("bad",errs.some(e=>/外字|16進|重複/.test(e)));
+        ligI.classList.toggle("bad",errs.some(e=>/合字/.test(e)));
+      };
+      puaI.oninput=upd;ligI.oninput=upd;advI.oninput=upd;
+      row.querySelector(".del").onclick=()=>{items=items.filter(o=>o!==it);render();save()};
+      box.append(row);
+    });
+    document.querySelectorAll("#items .item").forEach(r=>r._check&&r._check());
+  }
+
+  // ---------- 取り込み ----------
+  function toName(line){
+    line=line.trim();
+    if(!line)return null;
+    let m=line.match(/glyphwiki\.org\/(?:wiki|glyph)\/([^\s?#\/]+?)(?:\.svg)?(?:[?#].*)?$/i);
+    if(m)return decodeURIComponent(m[1]);
+    if(/^[A-Za-z0-9_@\-.%]+$/.test(line))return line.replace(/\.svg$/i,"");
+    const cp=line.codePointAt(0);
+    return "u"+cp.toString(16);
+  }
+  async function fetchOne(name){
+    const url="https://glyphwiki.org/glyph/"+encodeURIComponent(name)+".svg";
+    const r=await fetch(url);
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    return {url,text:await r.text()};
+  }
+  $("fetchBtn").onclick=async()=>{
+    const names=$("links").value.split(/\n/).map(toName).filter(Boolean);
+    if(!names.length){log("リンクを入力してください","e");return}
+    $("fetchBtn").disabled=true;
+    for(const n of names){
+      try{
+        const {url,text}=await fetchOne(n);
+        addItem(n,text);
+        log("追加: "+n+"  ← "+url,"o");
+      }catch(e){
+        const cors=e instanceof TypeError;
+        log("失敗: "+n+" — "+(cors?"取得できませんでした（CORS等でブロックされた可能性）。SVGを保存してファイル追加、またはソースを貼り付けてください":e.message),"e");
+      }
+    }
+    $("fetchBtn").disabled=false;
+  };
+  async function addFiles(files){
+    for(const f of files){
+      try{addItem(f.name.replace(/\.svg$/i,""),await f.text());log("追加: "+f.name,"o")}
+      catch(e){log("失敗: "+f.name+" — "+e.message,"e")}
+    }
+  }
+  $("file").onchange=e=>{addFiles([...e.target.files]);e.target.value=""};
+  window.addEventListener("dragover",e=>e.preventDefault());
+  window.addEventListener("drop",e=>{e.preventDefault();addFiles([...e.dataTransfer.files].filter(f=>/svg/i.test(f.type)||/\.svg$/i.test(f.name)))});
+  $("pasteBtn").onclick=()=>{
+    try{addItem($("pname").value.trim()||"貼り付け"+nextId,$("paste").value);log("追加しました","o");$("paste").value=""}
+    catch(e){log("失敗: "+e.message,"e")}
+  };
+
+  // ---------- フォント作成 ----------
+  function makeSpec(){
+    const errs=[];
+    const asc=parseInt($("asc").value)||880,desc=parseInt($("desc").value)||120,S=asc+desc;
+    const glyphs=[];
+    items.forEach(it=>{
+      const e=validateItem(it);
+      if(e.length){errs.push(it.name+": "+e.join(" ／ "));return}
+      let cs;
+      try{cs=svgToUnitContours(it.svg)}catch(x){errs.push(it.name+": "+x.message);return}
+      const contours=cs.map(c=>{
+        const r=[];
+        c.forEach(p=>{
+          const q=[Math.round(p[0]*S),Math.round(asc-p[1]*S)];
+          const l=r[r.length-1];
+          if(!l||l[0]!==q[0]||l[1]!==q[1])r.push(q);
+        });
+        while(r.length>1&&r[0][0]===r[r.length-1][0]&&r[0][1]===r[r.length-1][1])r.pop();
+        return r;
+      }).filter(c=>c.length>=3);
+      const cp=parseCp(it.pua),seq=parseSeq(it.lig);
+      glyphs.push({contours,advance:it.adv||S,pua:cp==null?null:cp,lig:seq.length>=2?seq:null});
+    });
+    return {errs,spec:{family:$("family").value.trim()||"MyGlyphFont",ascent:asc,descent:desc,glyphs}};
+  }
+
+  $("buildBtn").onclick=async()=>{
+    $("blog").innerHTML="";$("stat").textContent="";
+    if(!items.length){blog("グリフがありません","e");return}
+    const {errs,spec}=makeSpec();
+    if(errs.length){errs.forEach(e=>blog(e,"e"));blog("エラーを直してからもう一度作成してください","e");return}
+    let res;
+    try{res=buildFont(spec)}catch(e){blog("作成に失敗: "+e.message,"e");return}
+    lastBuild={data:res.data,name:spec.family};
+    $("dlBtn").disabled=false;
+    $("stat").textContent="作成しました：グリフ "+res.numGlyphs+"、文字コード割り当て "+res.mapped+"、合字 "+res.ligatures+"、"+Math.round(res.data.length/1024*10)/10+" KB";
+    if(res.placeholders)blog("合字の部品に使われた文字のうち "+res.placeholders+" 字は、フォント内に字形が無いため空白グリフを入れました（そのフォントで直接その文字を打つと空白になります）。","e");
+    try{
+      const fam="GWPreview"+Date.now();
+      const ff=new FontFace(fam,res.data.buffer.slice(0));
+      await ff.load();document.fonts.add(ff);
+      $("sample").style.fontFamily='"'+fam+'",sans-serif';
+      if(!$("sample").value)$("fillPua").click();
+      blog("試し書きに反映しました","o");
+    }catch(e){blog("ブラウザでフォントを読み込めませんでした: "+e.message,"e")}
+  };
+  $("dlBtn").onclick=()=>{
+    if(!lastBuild)return;
+    const b=new Blob([lastBuild.data],{type:"font/ttf"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(b);
+    a.download=(lastBuild.name.replace(/[^\w\-]+/g,"_")||"font")+".ttf";
+    document.body.append(a);a.click();a.remove();
+  };
+
+  // ---------- 試し書き ----------
+  $("fillPua").onclick=()=>{
+    const cps=items.map(i=>parseCp(i.pua)).filter(c=>c!=null&&!isNaN(c)&&rangeOf(c));
+    $("sample").value=cps.map(c=>String.fromCodePoint(c)).join("");
+  };
+  $("fillLig").onclick=()=>{
+    $("sample").value=items.map(i=>parseSeq(i.lig)).filter(s=>s.length>=2).map(s=>s.map(c=>String.fromCodePoint(c)).join("")).join("　");
+  };
+  $("fs").onchange=()=>{$("sample").style.fontSize=$("fs").value+"px"};
+
+  // ---------- プロジェクト ----------
+  const pta=$("pta");
+  const snapshot=()=>JSON.stringify({items,nextId,family:$("family").value,asc:$("asc").value,desc:$("desc").value});
+  $("pExp").onclick=()=>{$("pio").style.display="block";pta.value=snapshot()};
+  $("pImp").onclick=()=>{$("pio").style.display="block";pta.value="";pta.focus()};
+  $("pApply").onclick=()=>{
+    try{load(JSON.parse(pta.value));render();save()}catch(e){alert("読み込めませんでした")}
+  };
+  $("pCopy").onclick=()=>{pta.select();try{navigator.clipboard.writeText(pta.value)}catch(e){}};
+  $("pDl").onclick=()=>{
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([snapshot()],{type:"application/json"}));
+    a.download="glyph-font-project.json";document.body.append(a);a.click();a.remove();
+  };
+  $("pClr").onclick=()=>{if(confirm("取り込んだグリフと割り当てを全部消しますか？")){items=[];render();save()}};
+  ["family","asc","desc"].forEach(id=>$(id).addEventListener("input",save));
+
+  try{const s=localStorage.getItem(KEY);if(s)load(JSON.parse(s))}catch(e){}
+  $("sample").style.fontSize=$("fs").value+"px";
+  render();
+})();
+</script>
+</body>
+</html>
