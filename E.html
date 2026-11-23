@@ -51,7 +51,7 @@
 
 <div class="panel">
   <h2>① GlyphWikiから取り込む</h2>
-  <textarea id="links" rows="3" placeholder="1行に1つ：&#10;https://glyphwiki.org/wiki/u312d5-jv&#10;https://glyphwiki.org/glyph/u4e00-g.svg&#10;u9ce5-j（グリフ名だけでもOK）"></textarea>
+  <textarea id="links" rows="3" placeholder="1行に1つ（どれでもOK）：&#10;鳥　← 漢字1文字（1行に複数字なら1字ずつ取得）&#10;U+312D5　← Unicode&#10;u9ce5-j　← グリフ名&#10;https://glyphwiki.org/wiki/u312d5-jv　← リンク"></textarea>
   <div class="row" style="margin-top:8px">
     <label class="hint">自動で割り当てる外字領域：
       <select id="plane">
@@ -68,7 +68,7 @@
     <div class="row" style="margin-top:6px"><input type="text" id="pname" placeholder="名前（任意）" style="width:200px"><button id="pasteBtn">追加</button></div>
     <textarea id="paste" rows="4" placeholder="&lt;svg ...&gt;...&lt;/svg&gt;" style="margin-top:6px"></textarea>
   </details>
-  <p class="hint" style="margin:8px 0 0">リンクは自動で <code>https://glyphwiki.org/glyph/グリフ名.svg</code> に変換して取得します。ブラウザの制限（CORS）で取得できないときは、そのSVGリンクを保存してファイル追加するか、ソースを貼り付けてください。SVGファイルはこの画面にドラッグ＆ドロップでも追加できます。</p>
+  <p class="hint" style="margin:8px 0 0">漢字は <code>u</code>+16進のグリフ名（例：鳥→<code>u9ce5</code>）に変換して取得します。リンクは自動で <code>https://glyphwiki.org/glyph/グリフ名.svg</code> に変換して取得します。ブラウザの制限（CORS）で取得できないときは、そのSVGリンクを保存してファイル追加するか、ソースを貼り付けてください。SVGファイルはこの画面にドラッグ＆ドロップでも追加できます。</p>
   <div class="log" id="log"></div>
 </div>
 
@@ -587,14 +587,18 @@ function svgToUnitContours(text){
   }
 
   // ---------- 取り込み ----------
-  function toName(line){
+  // 1行 → グリフ名の配列（リンク / グリフ名 / U+コード / 漢字（複数字なら1字ずつ））
+  function toNames(line){
     line=line.trim();
-    if(!line)return null;
+    if(!line)return [];
     let m=line.match(/glyphwiki\.org\/(?:wiki|glyph)\/([^\s?#\/]+?)(?:\.svg)?(?:[?#].*)?$/i);
-    if(m)return decodeURIComponent(m[1]);
-    if(/^[A-Za-z0-9_@\-.%]+$/.test(line))return line.replace(/\.svg$/i,"");
-    const cp=line.codePointAt(0);
-    return "u"+cp.toString(16);
+    if(m)return [decodeURIComponent(m[1])];
+    m=line.match(/^(?:u\+|0x)([0-9a-f]{4,6})$/i);
+    if(m)return ["u"+parseInt(m[1],16).toString(16)];
+    const chars=[...line];
+    if(/^[A-Za-z0-9_@\-.%]+$/.test(line)&&chars.length>1)return [line.replace(/\.svg$/i,"")];
+    // 文字そのもの：空白を除いて1字ずつ
+    return chars.filter(c=>!/\s/.test(c)).map(c=>"u"+c.codePointAt(0).toString(16));
   }
   async function fetchOne(name){
     const url="https://glyphwiki.org/glyph/"+encodeURIComponent(name)+".svg";
@@ -603,7 +607,7 @@ function svgToUnitContours(text){
     return {url,text:await r.text()};
   }
   $("fetchBtn").onclick=async()=>{
-    const names=$("links").value.split(/\n/).map(toName).filter(Boolean);
+    const names=$("links").value.split(/\n/).flatMap(toNames);
     if(!names.length){log("リンクを入力してください","e");return}
     $("fetchBtn").disabled=true;
     for(const n of names){
